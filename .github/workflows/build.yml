@@ -21,13 +21,14 @@ jobs:
         mkdir -p ~/twrp && cd ~/twrp
         sudo apt install repo -y
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
-        repo sync -j4
+        repo sync -j4 --no-clone-bundle --current-branch | while read line; do echo "[$(date)] $line"; done
 
     - name: Clone Borneo device tree
       run: |
         cd ~/twrp
-        mkdir -p device/motorola/borneo
-        git clone https://github.com/touchpro/twrp_device_motorola_borneo/tree/twrp-android-11
+        mkdir -p device/motorola
+        git clone -b twrp-android-11 https://github.com/touchpro/twrp_device_motorola_borneo device/motorola/borneo
+
     - name: Build TWRP
       run: |
         cd ~/twrp
