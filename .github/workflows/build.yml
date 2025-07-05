@@ -8,11 +8,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # Étape 1 : Environnement de base
     - name: Setup environment
       run: |
         sudo apt-get update
-        sudo apt-get install git wget curl build-essential -y
+        sudo apt-get install git wget curl build-essential ccache -y
 
+    # Étape 2 : Libérer de l'espace disque
+    - name: Clean up disk
+      run: |
+        sudo rm -rf /usr/share/dotnet \
+                    /opt/ghc \
+                    /usr/local/share/boost \
+                    /usr/local/lib/android \
+                    /opt/hostedtoolcache
+
+    # Étape 3 : Préparation de ccache
+    - name: Setup ccache
+      run: |
+        ccache -M 5G
+
+    # Étape 4 : Cloner les sources TWRP
     - name: Clone TWRP sources
       run: |
         git config --global user.name "GitHub Actions"
@@ -23,21 +39,45 @@ jobs:
         repo init -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-11
         repo sync -j4 --no-clone-bundle --current-branch | while read line; do echo "[$(date)] $line"; done
 
+    # Étape 5 : Cloner le device tree Motorola Borneo
     - name: Clone Borneo device tree
       run: |
         cd ~/twrp
         mkdir -p device/motorola
         git clone -b twrp-android-11 https://github.com/touchpro/twrp_device_motorola_borneo device/motorola/borneo
 
-    - name: Build TWRP
+    # Étape 6 : Compilation de l'image recovery
+    - name: Build TWRP recovery.img
       run: |
         cd ~/twrp
+        export USE_CCACHE=1
         source build/envsetup.sh
         lunch twrp_borneo-eng
-        mka recoveryimage
+        mka recoveryimage | tee build.log
 
+    # Étape 7 : Upload local de l'image compilée
     - name: Upload recovery.img
       uses: actions/upload-artifact@v4
       with:
         name: twrp-borneo
         path: ~/twrp/out/target/product/borneo/recovery.img
+
+    # Étape 8 : Upload du fichier de log de compilation (utile en cas d’erreur)
+    - name: Upload build log
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: ~/twrp/build.log
+
+    # Étape 9 : Commit et push automatique vers une branche `output-recovery`
+    - name: Push recovery.img to repository branch
+      run: |
+        cd ~/twrp/out/target/product/borneo
+        git init
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git checkout -b output-recovery
+        git add recovery.img
+        git commit -m "✅ Auto-built TWRP recovery for Borneo - $(date +'%Y-%m-%d %H:%M')"
+        git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+        git push -f origin output-recovery
